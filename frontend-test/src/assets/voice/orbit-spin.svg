@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 760" width="760" height="760">
+  <defs>
+    <linearGradient id="spin-comet" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#d8ffff" stop-opacity="1"/>
+      <stop offset=".35" stop-color="#66f0ff" stop-opacity=".55"/>
+      <stop offset="1" stop-color="#1fbfd8" stop-opacity="0"/>
+    </linearGradient>
+    <filter id="spin-glow" x="-120%" y="-120%" width="340%" height="340%">
+      <feGaussianBlur stdDeviation="4"/>
+    </filter>
+  </defs>
+  <g>
+    <circle cx="380" cy="380" r="298" fill="none" stroke="#27ecef" stroke-opacity=".6" stroke-width="2"
+      stroke-dasharray="1.6 11" stroke-linecap="round"/>
+    <circle cx="380" cy="380" r="262" fill="none" stroke="#27ecef" stroke-opacity=".3" stroke-width="1.4"
+      stroke-dasharray="1 17" stroke-linecap="round"/>
+    <circle cx="380" cy="380" r="316" fill="none" stroke="url(#spin-comet)" stroke-width="2.4" stroke-linecap="round"
+      stroke-dasharray="170 1818" opacity=".9"/>
+    <circle cx="380" cy="82" r="3.6" fill="#d9ffff" filter="url(#spin-glow)" opacity=".95"/>
+  </g>
+  <g>
+    <circle cx="380" cy="380" r="282" fill="none" stroke="#8ff6ff" stroke-opacity=".55" stroke-width="2"
+      stroke-dasharray="52 1720" stroke-linecap="round"/>
+    <circle cx="380" cy="98" r="2.4" fill="#aefcff" opacity=".8"/>
+  </g>
+</svg>

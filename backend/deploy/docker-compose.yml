@@ -1,0 +1,201 @@
+# 语音助手模型服务编排 (vLLM + Qwen3-ASR + Web)
+# 用法: docker compose -f deploy/docker-compose.yml up -d
+#
+# 构建命令:
+#   1) 单独 build 镜像 (本地 Dockerfile 改了之后, 先 build 再 up):
+#        docker compose -f deploy/docker-compose.yml build
+#   2) build 时指定服务 (只重 build 某个, 节省时间):
+#        docker compose -f deploy/docker-compose.yml build qwen-asr
+#        docker compose -f deploy/docker-compose.yml build cosyvoice
+#        docker compose -f deploy/docker-compose.yml build web
+#   3) up 时强制 build (本地代码 / Dockerfile 改完后, 一次性 build+up):
+#        docker compose -f deploy/docker-compose.yml up -d --build
+#   4) 强制重建 (不走缓存, 解决 "明明改了 Dockerfile 镜像没更新" 的问题):
+#        docker compose -f deploy/docker-compose.yml build --no-cache
+#        docker compose -f deploy/docker-compose.yml up -d --build --force-recreate
+#   5) 看 build 日志 (排查依赖装不上 / 镜像拉取慢):
+#        docker compose -f deploy/docker-compose.yml build --progress=plain
+#
+#   注: `up -d` 默认不会自动 build 本地 Dockerfile 改动的镜像 (用 image: 拉取的不算),
+#       改了 qwen_asr.Dockerfile / cosyvoice.Dockerfile / web.Dockerfile 必须先 build
+#       或加 --build 才会生效. (qwen-asr 镜像 = vllm-openai + 解码补丁层, build 很快;
+#       main-llm / embedding 用官方预构建镜像, 不需要 build)
+#
+# 端口约定:
+#   8001 — 主 LLM (Qwen2.5-3B-Instruct-AWQ, Function Calling + 结构化数据)
+#   8003 — Embedding (BAAI/bge-m3)
+#   8005 — Qwen3-ASR-1.7B (ASR, vLLM 原生支持, OpenAI 兼容接口)
+#   8006 — CosyVoice2-0.5B (TTS)
+#   8015 — 独立语音服务
+#
+# 模型路径: 默认挂载 /mnt/e/models (WSL2 访问 Windows E:\models)
+#          环境变量 MODEL_DIR 可覆盖
+# GPU 显存预算 (部署服务器 32GB; 各 vLLM 服务的 util 之和必须 < 1):
+#      main-llm  Qwen3-14B-AWQ (0.55) — int4 权重 ~9.3GB + KV ~6GB; ≥40GB 卡可换 bf16 原版 (见服务注释)
+#      qwen-asr  Qwen3-ASR-1.7B (0.10) — 权重 ~3.4GB
+#      embedding bge-m3 fp16 (0.05)    — 权重 ~1.1GB
+#      cosyvoice CosyVoice2 fp16       — 直接加载 ~1.5GB (不走 vLLM util 预分配)
+#      → 合计 ~22GB, 留 ~10GB 余量
+#      笔记本 RTX A3000 6GB 卡改用 6GB 预设 (见 main-llm 服务注释):
+#        3B-AWQ (0.55) + ASR (0.6, 或换 0.6B 模型降到 0.25) + embedding (0.2) + cosyvoice
+#      CUDA OOM 处置: a) main-llm util 下调; b) cosyvoice --device cpu; c) ASR 换 Qwen3-ASR-0.6B
+#      通过 deploy.resources.reservations.devices 声明 (Docker Compose v2 标准)
+#      不要同时用 runtime: nvidia, 两者冲突会导致 GPU 不可用
+
+services:
+  main-llm:
+    # 主 LLM: Qwen3-14B-AWQ (int4 量化, 权重 ~9.3GB) — 32GB 卡的标准方案
+    #   0.55 预算 (17.6GB) = 权重 9.3GB + KV cache ~6GB + 激活, 8192 上下文够用
+    #   ≥40GB 卡想跑官方 bf16 原版 (权重 ~28.5GB): 下载 Qwen/Qwen3-14B 到 $MODEL_DIR/Qwen3-14B,
+    #     改 --model /models/Qwen3-14B --gpu-memory-utilization 0.80 (40GB 卡 KV 偏紧可 0.85)
+    #   6GB 笔记本 (RTX A3000) 用:
+    #     --model /models/Qwen2.5-3B-Instruct-AWQ  --gpu-memory-utilization 0.55
+    #     --max-model-len 2048  --max-num-seqs 4
+    image: vllm/vllm-openai:latest
+    container_name: billiards-voice-main-llm
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - HF_HUB_OFFLINE=1
+      - TRANSFORMERS_OFFLINE=1
+      - VLLM_WSL2_ENABLE_PIN_MEMORY=1
+    volumes:
+      - ${MODEL_DIR:-c:/Users/Ehua/BilliardsAIProject/models}:/models
+    command: >
+      --model /models/Qwen2.5-7B-Instruct-AWQ
+      --served-model-name qwen
+      --dtype auto
+      --gpu-memory-utilization 0.55
+      --max-model-len 8192
+      --enforce-eager
+      --max-num-seqs 8
+      --port 8001
+      --host 0.0.0.0
+      --enable-auto-tool-choice
+      --tool-call-parser hermes
+    ports:
+      - "8001:8001"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+  embedding:
+    image: vllm/vllm-openai:latest
+    container_name: billiards-voice-embedding
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - HF_HUB_OFFLINE=1
+      - TRANSFORMERS_OFFLINE=1
+      - VLLM_WSL2_ENABLE_PIN_MEMORY=1
+    volumes:
+      - ${MODEL_DIR:-c:/Users/Ehua/BilliardsAIProject/models}:/models
+    command: >
+      --model /models/bge-m3
+      --served-model-name bge-m3
+      --dtype half
+      --gpu-memory-utilization 0.05
+      --max-model-len 8192
+      --port 8003
+      --host 0.0.0.0
+    ports:
+      - "8003:8003"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+  qwen-asr:
+    # Qwen3-ASR 用 vLLM 原生支持 (vllm-openai 0.26+ 自带 qwen3_asr.py), 与 main-llm
+    # 同镜像同写法; 官方镜像缺音频解码后端, 用 deploy/qwen_asr.Dockerfile 补薄一层
+    # (只补 soundfile/av/scipy/soxr, 基础镜像复用本地 vllm/vllm-openai, build 秒级)
+    # OpenAI 兼容 /v1/chat/completions, 音频走 base64 audio_url
+    build:
+      context: ..
+      dockerfile: deploy/qwen_asr.Dockerfile
+    image: billiard/qwen-asr:latest
+    container_name: billiards-voice-qwen-asr
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - HF_HUB_OFFLINE=1
+      - TRANSFORMERS_OFFLINE=1
+      - VLLM_WSL2_ENABLE_PIN_MEMORY=1
+    volumes:
+      - ${MODEL_DIR:-c:/Users/Ehua/BilliardsAIProject/models}:/models
+    command: >
+      --model /models/Qwen3-ASR-1.7B
+      --served-model-name qwen3-asr
+      --host 0.0.0.0
+      --port 8005
+      --gpu-memory-utilization 0.10
+      --max-model-len 4096
+      --enforce-eager
+      --max-num-seqs 4
+    ports:
+      - "8005:8005"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+  cosyvoice:
+    build:
+      context: ..
+      dockerfile: deploy/cosyvoice.Dockerfile
+    container_name: billiards-voice-cosyvoice
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      # 容器内模型路径: 必须是挂载点 /models (不是宿主机路径), 直接离线加载本地模型
+      - MODEL_DIR=/models
+      # TTS 走官方推理栈 (成熟稳定); vLLM 加速为可选实验路径 (需镜像装 vllm +
+      # 升级 torch/transformers 偏离验证版本, 首启导出 vllm/ ~1GB, 不支持 bistream),
+      # 要启用: Dockerfile 追加 pip install vllm torchaudio 后改 1
+      - COSYVOICE_LOAD_VLLM=0
+    volumes:
+      - ${MODEL_DIR:-c:/Users/Ehua/BilliardsAIProject/models}:/models
+      - ~/.cache/modelscope:/root/.cache/modelscope
+    ports:
+      - "8006:8006"
+    # 模型加载 ~1min (首次无本地模型会先从 ModelScope 下载)
+    # 显存不足时追加 --device cpu (零显存, 合成变慢, 见文件头注释)
+    command: python deploy/cosyvoice_server.py --host 0.0.0.0 --port 8006
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+  web:
+    build:
+      context: ../..
+      dockerfile: backend/deploy/web.Dockerfile
+    environment:
+      ASR_ENDPOINT: http://qwen-asr:8005/v1/audio/transcriptions
+      MAIN_LLM_BASE_URL: http://main-llm:8001/v1
+      MAIN_LLM_MODEL: qwen
+      SECONDARY_LLM_BASE_URL: http://main-llm:8001/v1
+      SECONDARY_LLM_MODEL: qwen
+      EMBEDDING_BASE_URL: http://embedding:8003/v1
+      TTS_BACKEND: cosyvoice
+      TTS_COSYVOICE_ENDPOINT: http://cosyvoice:8006
+      BILLIARDS_CORE_URL: ${BILLIARDS_CORE_URL:-}
+    volumes:
+      - ../voice/chroma_db:/app/voice/chroma_db
+      - ../output:/app/output
+    ports:
+      - "8015:8015"
+    depends_on:
+      - main-llm
+      - embedding
+      - qwen-asr
+      - cosyvoice

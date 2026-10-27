@@ -1,0 +1,24 @@
+# 语音助手模型服务依赖
+# vLLM (主 LLM / 次级 LLM / Embedding, OpenAI 兼容接口)
+vllm>=0.6.0
+transformers>=4.44.0
+
+# Qwen3-ASR (语音识别): vLLM 原生支持 (vllm-openai 0.26+), docker compose 部署, 无需本地安装
+# 以下为 CosyVoice2 TTS 本地直跑 (deploy/cosyvoice_server.py) 所需依赖
+# 本地启用 vLLM 加速 (COSYVOICE_LOAD_VLLM=1) 还需另装: pip install vllm (>=0.10)
+torchaudio>=2.3.0
+soundfile>=0.12.0
+uvicorn>=0.29.0
+
+# Web 服务端
+requests>=2.31.0
+
+# RAG 向量库
+chromadb>=0.5.0
+
+# TTS 语音播报 (容器内只装 edge-tts, pyttsx3 在 Linux 容器里中文太差不推荐)
+# edge-tts 纯 Python, 联网调 Microsoft Edge 公共接口, 零 GPU
+edge-tts>=6.1.9
+
+# 注意: pyttsx3 不进容器 (Linux 容器需要 espeak + 中文语音包, 音质差)
+#       Windows 本地直跑 python run_vision_server.py 时单独装: pip install pyttsx3

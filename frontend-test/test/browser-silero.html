@@ -1,0 +1,22 @@
+<!doctype html><html lang="zh-CN"><meta charset="utf-8"><title>Silero 本地模型验证</title><style>body{font:16px system-ui;max-width:850px;margin:48px auto;line-height:1.8}button{padding:12px 24px}pre{white-space:pre-wrap}</style><h1>Silero 本地模型验证</h1><p>使用固定的合成测试语音及静音 PCM；不采集麦克风、不调用云端。</p><button id="run">运行真实 Silero 模型</button><pre id="result">等待开始</pre><script type="module">
+import { createSileroActivity } from '/src/audio/sileroActivity.ts'
+const out=document.querySelector('#result')
+document.querySelector('#run').onclick=async()=>{
+ let vad
+ document.querySelector('#run').disabled=true
+ try{
+  out.textContent='正在加载本地 ONNX / WASM'
+  const events=[];const started=performance.now()
+  vad=await createSileroActivity(speaking=>{events.push(speaking);out.textContent+='\n活动：'+(speaking?'开始说话':'停止说话')},()=>{out.textContent+='\n失败：模型运行异常'})
+  out.textContent='模型加载成功，用时 '+Math.round(performance.now()-started)+'ms'
+  const bytes=await(await fetch('./fixtures/silero-speech.wav')).arrayBuffer()
+  const speech=new Int16Array(bytes,44)
+  async function feed(pcm){for(let i=0;i<pcm.length;i+=640){vad.push(pcm.slice(i,i+640));await new Promise(r=>setTimeout(r,40))}}
+  await feed(new Int16Array(8000));await feed(speech);await feed(new Int16Array(16000))
+  await new Promise(r=>setTimeout(r,300))
+  if(!events.includes(true)||events.at(-1)!==false)throw new Error('未检测到完整人声边界：'+JSON.stringify(events))
+  out.textContent+='\n全部通过：真实 Silero ONNX 在浏览器 Worker 中检测到人声开始和静音结束'
+ }catch(e){out.textContent+='\n失败：'+e.message}
+ finally{vad?.reset();document.querySelector('#run').disabled=false}
+}
+</script></html>

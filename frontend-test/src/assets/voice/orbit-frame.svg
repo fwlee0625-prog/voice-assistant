@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 760" width="760" height="760">
+  <defs>
+    <linearGradient id="frame-arc-top" x1="150" y1="60" x2="620" y2="260" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#8ffbff" stop-opacity="0"/>
+      <stop offset=".45" stop-color="#36fff1" stop-opacity=".95"/>
+      <stop offset="1" stop-color="#2fc9e0" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="frame-arc-bottom" x1="640" y1="700" x2="200" y2="520" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#7ff6ff" stop-opacity="0"/>
+      <stop offset=".5" stop-color="#5ee9f7" stop-opacity=".8"/>
+      <stop offset="1" stop-color="#1aa9c2" stop-opacity="0"/>
+    </linearGradient>
+    <radialGradient id="frame-glow" cx="50%" cy="50%" r="50%">
+      <stop offset=".72" stop-color="#39e6f7" stop-opacity="0"/>
+      <stop offset=".9" stop-color="#39e6f7" stop-opacity=".18"/>
+      <stop offset="1" stop-color="#39e6f7" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  
+  <circle cx="380" cy="380" r="368" fill="none" stroke="#2bbdd6" stroke-opacity=".12" stroke-width="1"/>
+  <circle cx="380" cy="380" r="336" fill="none" stroke="#18e5ed" stroke-opacity=".38" stroke-width="1"/>
+  <circle cx="380" cy="380" r="252" fill="none" stroke="#18e5ed" stroke-opacity=".22" stroke-width="1"/>
+  <circle cx="380" cy="380" r="306" fill="none" stroke="url(#frame-arc-top)" stroke-width="3" stroke-linecap="round"
+    stroke-dasharray="420 1498" stroke-dashoffset="-560" opacity=".9"/>
+  <circle cx="380" cy="380" r="322" fill="none" stroke="url(#frame-arc-bottom)" stroke-width="2" stroke-linecap="round"
+    stroke-dasharray="300 1720" stroke-dashoffset="500" opacity=".7"/>
+  <g stroke="#aefaff" stroke-opacity=".5" stroke-width="2.4" stroke-linecap="round">
+    <path d="M380 26v14"/>
+    <path d="M380 720v14"/>
+    <path d="M26 380h14"/>
+    <path d="M720 380h14"/>
+  </g>
+</svg>

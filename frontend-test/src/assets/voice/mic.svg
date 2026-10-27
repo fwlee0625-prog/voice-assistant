@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <defs>
+    <linearGradient id="mic-fill" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#d9feff"/>
+    </linearGradient>
+  </defs>
+  <path d="M32 40.5c5.6 0 9.6-4.2 9.6-9.8V17.6c0-5.6-4-9.6-9.6-9.6s-9.6 4-9.6 9.6v13.1c0 5.6 4 9.8 9.6 9.8Z" fill="url(#mic-fill)"/>
+  <path d="M16.6 29.4v2.2c0 8.6 6.9 15.5 15.4 15.5s15.4-6.9 15.4-15.5v-2.2" fill="none" stroke="#f2ffff" stroke-width="3.4" stroke-linecap="round"/>
+  <path d="M32 47.4v7.2" fill="none" stroke="#f2ffff" stroke-width="3.4" stroke-linecap="round"/>
+  <path d="M23.4 55.2h17.2" fill="none" stroke="#f2ffff" stroke-width="3.4" stroke-linecap="round"/>
+</svg>

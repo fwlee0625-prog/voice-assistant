@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>语音舞台 · 动效预览</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#020a10;color:#d5faff;font:14px system-ui}header{position:relative;z-index:10;padding:20px;display:flex;gap:12px;align-items:center;flex-wrap:wrap}button{padding:9px 16px;border:1px solid #24606e;border-radius:20px;background:#071e28;color:#bbf8ff;cursor:pointer}button[aria-pressed=true]{border-color:#36f1de;background:#0c3940}label{display:flex;align-items:center;gap:8px}#stage{--orb-size:clamp(156px,32vmin,288px);--orb-top:40%;height:calc(100dvh - 90px);background:radial-gradient(ellipse at 50% 50%,#06232d80,transparent 65%);margin:auto}#stage.mobile{width:min(390px,100%);height:700px;--orb-size:180px;border:1px solid #174553}#app{height:100%}p{margin:0;color:#8eafb9;font-size:12px}
+</style>
+<header><button data-mode="idle" aria-pressed="true">静默待机</button><button data-mode="listening">说话识别</button><button data-mode="answering">助手回答</button><button data-mode="busy">思考中</button><label>输入音量<input id="level" type="range" min="0" max="100" value="65"></label><label><input id="conversation" type="checkbox"> 对话中</label><button id="size">切换手机尺寸</button><p>本地模拟音量，无需麦克风或云端请求；将音量拖到 0 仍持续流动，增大音量可验证加速和扩散。勾选「对话中」可查看麦克风与音量波形的切换。</p></header>
+<div id="stage"><div id="app"></div></div>
+<script type="module">
+import {createApp,h,ref} from 'vue'
+import VoiceStage from '/src/components/VoiceStage.vue'
+const mode=ref('idle')
+const active=ref(false)
+const analyser={fftSize:512,getByteTimeDomainData(data){const volume=Number(document.querySelector('#level').value)/100;const envelope=.65+Math.sin(performance.now()*.004)*.35;for(let i=0;i<data.length;i++)data[i]=128+Math.round(Math.sin(i*.15)*volume*22*envelope)}}
+createApp({setup:()=>()=>h(VoiceStage,{mode:mode.value,analyser,active:active.value,label:'预览交互光圈'})}).mount('#app')
+for(const button of document.querySelectorAll('[data-mode]'))button.onclick=()=>{mode.value=button.dataset.mode;for(const other of document.querySelectorAll('[data-mode]'))other.setAttribute('aria-pressed',String(other===button))}
+document.querySelector('#conversation').onchange=event=>{active.value=event.target.checked}
+document.querySelector('#size').onclick=()=>document.querySelector('#stage').classList.toggle('mobile')
+</script>
+</html>

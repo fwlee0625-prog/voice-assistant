@@ -1,0 +1,44 @@
+<!doctype html><html lang="zh-CN"><meta charset="utf-8"><title>语音交互浏览器验证</title><style>body{font:16px system-ui;max-width:850px;margin:48px auto;line-height:1.8}button{padding:12px 24px}pre{white-space:pre-wrap}</style><h1>语音交互浏览器验证</h1><p>仅使用页面内模拟识别文本与静音 PCM，不访问麦克风、不调用云端。</p><button id="run">运行验证</button><pre id="result">等待开始</pre><script type="module">
+import { createConversation } from '/src/chat/conversation.ts'
+import { createSpeechPlayer, prepareSpeechPlayback } from '/src/audio/speechPlayer.ts'
+const out = document.querySelector('#result')
+const assert = (value, text) => { if(!value) throw new Error(text); out.textContent += '\n通过：'+text }
+const wait = async predicate => { const start=performance.now(); while(!predicate()){if(performance.now()-start>8000)throw new Error('等待超时');await new Promise(r=>setTimeout(r,20))} }
+const packet = e => new TextEncoder().encode('data: '+JSON.stringify(e)+'\n\n')
+document.querySelector('#run').onclick = async () => {
+ document.querySelector('#run').disabled = true
+ const nativeFetch=window.fetch
+ let session
+ try {
+  await prepareSpeechPlayback()
+  out.textContent='开始验证'
+  let calls=0;let oldSignal;let stops=0;const ducks=[]
+  window.fetch=async (_url,init)=>{
+   calls++; const signal=init.signal
+   if(calls===1){oldSignal=signal; return new Response(new ReadableStream({start(c){
+    c.enqueue(packet({type:'text',delta:'先瞄准目标球，再平稳出杆。'}))
+    c.enqueue(packet({type:'audio',data:btoa(String.fromCharCode(...new Uint8Array(48000))),sampleRate:24000,format:'pcm16',channels:1,text:'先瞄准目标球，再平稳出杆。'}))
+    signal.addEventListener('abort',()=>c.error(new Error('cancelled')),{once:true})
+   }}),{headers:{'content-type':'text/event-stream'}})}
+   return new Response('data: '+JSON.stringify({type:'text',delta:'新的回答。'})+'\n\n'+'data: {"type":"done"}\n\n',{headers:{'content-type':'text/event-stream'}})
+  }
+  session=createConversation(()=>{const p=createSpeechPlayer(); return {...p,stop(){stops++;p.stop()},duck(value){ducks.push(value);p.duck(value)}}})
+  session.accept(0,'请告诉我怎么打台球？',true)
+  await wait(()=>session.state.turns[0]?.assistant)
+  await new Promise(r=>setTimeout(r,100))
+  session.speechActivity(true)
+  assert(ducks.includes(true),'检测到开口时降低真实 Web Audio 播放音量')
+  session.accept(1,'先瞄准目标球，再平稳出杆。',true)
+  assert(!oldSignal.aborted && !session.state.pendingText,'正在播报的文字回声未取消回答、未触发新请求')
+  session.accept(2,'等一下，我想换个问题',false)
+  assert(oldSignal.aborted && stops===1 && session.state.turns[0].status==='interrupted','新话语取消旧请求并停止真实音频源')
+  session.speechActivity(false)
+  session.accept(2,'等一下，我想换个问题？',true)
+  await wait(()=>session.state.turns[1]?.status==='done')
+  assert(calls===2 && session.state.turns[1].assistant==='新的回答。','静音和最终结果之后自动开始新一轮回答')
+  assert(session.state.turns[0].assistant==='先瞄准目标球，再平稳出杆。','旧流关闭未覆盖新回答')
+  out.textContent+='\n全部通过（未采集麦克风、未调用云端）'
+ }catch(e){out.textContent+='\n失败：'+e.message}
+ finally{session?.dispose();window.fetch=nativeFetch;document.querySelector('#run').disabled=false}
+}
+</script></html>

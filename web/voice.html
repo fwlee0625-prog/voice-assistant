@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI 语音助手 · 中式八球智能教练</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="voice.css?v=2">
+</head>
+<body data-accent="positioning">
+
+<header class="voice-header" role="banner">
+    <div class="voice-header-left">
+        <a href="/table" class="back-btn" aria-label="返回主页面">←&nbsp;返回球台</a>
+        <h1 class="voice-title">
+            <span class="voice-gold">AI</span>
+            <span class="voice-subtitle">VOICE ASSISTANT · 语音助手</span>
+        </h1>
+    </div>
+    <div class="voice-header-right">
+        <span class="status-chip" id="voice-status-chip" aria-label="服务状态">
+            <span class="status-dot" id="voice-status-dot"></span>
+            <span class="status-text" id="voice-status-text">检测中</span>
+        </span>
+    </div>
+</header>
+
+<main class="voice-layout" role="main">
+
+    <!-- 对话区 -->
+    <section class="chat-area" aria-label="对话区">
+        <div class="chat-messages" id="chat-messages" aria-live="polite">
+            <!-- 欢迎消息 -->
+            <div class="msg msg-ai">
+                <div class="msg-avatar">AI</div>
+                <div class="msg-bubble">
+                    <p>您好, 我是中式八球 AI 语音教练。可以问我:</p>
+                    <ul>
+                        <li>"这球怎么打" / "帮我推荐击球方案"</li>
+                        <li>"模拟一下这杆击球"</li>
+                        <li>"标准开局" / "随机球局"</li>
+                        <li>"高杆跟杆怎么打" / "斯登和低杆区别"</li>
+                    </ul>
+                    <p class="msg-hint">支持语音输入 (按住麦克风说话) 或文字输入。</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- 输入区 -->
+        <div class="chat-input-area" aria-label="输入区">
+            <div class="chat-input-row">
+                <button class="mic-btn" id="mic-btn" type="button" aria-label="按住说话">
+                    <span class="mic-icon">🎙</span>
+                    <span class="mic-label">按住说话</span>
+                </button>
+                <input type="text" id="text-input" class="text-input"
+                       placeholder="或在此输入文字, 回车发送 ..."
+                       autocomplete="off" aria-label="文字输入">
+                <button class="send-btn" id="send-btn" type="button" aria-label="发送">发送</button>
+            </div>
+            <div class="recording-bar" id="recording-bar" hidden>
+                <span class="rec-dot"></span>
+                <span>正在录音 ...</span>
+                <span class="rec-timer" id="rec-timer">00:00</span>
+                <button class="rec-cancel" id="rec-cancel" type="button">取消</button>
+            </div>
+        </div>
+    </section>
+
+    <!-- 侧栏: 服务状态 + 快捷操作 -->
+    <aside class="voice-sidebar" aria-label="侧栏">
+        <section class="glass-panel">
+            <div class="panel-head">
+                <span class="panel-label">SERVICE STATUS · 服务状态</span>
+            </div>
+            <ul class="status-list" id="status-list">
+                <li>加载中 ...</li>
+            </ul>
+        </section>
+
+        <!-- 语音唤醒面板 -->
+        <section class="glass-panel wake-panel" id="wake-panel">
+            <div class="panel-head">
+                <span class="panel-label">VOICE WAKEUP · 语音唤醒</span>
+                <label class="switch" aria-label="唤醒开关">
+                    <input type="checkbox" id="wake-toggle">
+                    <span class="switch-slider"></span>
+                </label>
+            </div>
+            <div class="wake-body">
+                <label class="wake-field">
+                    <span class="wake-field-label">自定义唤醒词</span>
+                    <input type="text" id="wake-word" class="wake-input"
+                           value="小八教练" maxlength="20"
+                           placeholder="例如: 小八教练 / 嘿教练 / OK Coach"
+                           autocomplete="off">
+                </label>
+                <label class="wake-field">
+                    <span class="wake-field-label">唤醒欢迎词 (留空则不播报)</span>
+                    <input type="text" id="wake-greeting" class="wake-input"
+                           value="我在，请讲。" maxlength="60"
+                           placeholder="例如: 我在，请讲。/ 好的, 教练在听"
+                           autocomplete="off">
+                </label>
+                <div class="wake-hint" id="wake-hint">
+                    关闭中 · 开启后持续监听唤醒词
+                </div>
+                <div class="wake-supported" id="wake-supported" hidden>
+                    ⚠ 当前浏览器不支持语音识别 (SpeechRecognition), 请使用 Chrome / Edge
+                </div>
+            </div>
+        </section>
+
+        <section class="glass-panel">
+            <div class="panel-head">
+                <span class="panel-label">QUICK ACTIONS · 快捷操作</span>
+            </div>
+            <div class="quick-actions">
+                <button class="ctrl-btn" data-action="layout-default" type="button">📐 标准开局</button>
+                <button class="ctrl-btn" data-action="layout-random" type="button">🎲 随机球局</button>
+                <button class="ctrl-btn" data-action="clear-chat" type="button">🗑 清空对话</button>
+            </div>
+        </section>
+
+        <!-- TTS 语音播报 -->
+        <section class="glass-panel tts-panel" id="tts-panel">
+            <div class="panel-head">
+                <span class="panel-label">VOICE BROADCAST · 语音播报</span>
+                <label class="switch" aria-label="播报开关">
+                    <input type="checkbox" id="tts-toggle" checked>
+                    <span class="switch-slider"></span>
+                </label>
+            </div>
+            <div class="tts-body">
+                <div class="tts-info" id="tts-info">
+                    加载中 ...
+                </div>
+                <div class="tts-actions">
+                    <button class="ctrl-btn tts-test-btn" data-action="tts-test" type="button">
+                        🔊 试听
+                    </button>
+                    <button class="ctrl-btn tts-stop-btn" data-action="tts-stop" type="button" hidden>
+                        ⏹ 停止
+                    </button>
+                </div>
+            </div>
+        </section>
+
+        <section class="glass-panel">
+            <div class="panel-head">
+                <span class="panel-label">CURRENT TABLE · 当前球局</span>
+            </div>
+            <div class="table-info" id="table-info">
+                <p class="muted">尚未摆球, 点击"标准开局"或对 AI 说"标准开局"。</p>
+            </div>
+            <button class="ctrl-btn ctrl-primary back-to-table" data-action="view-table" type="button">
+                前往球台查看 →
+            </button>
+        </section>
+    </aside>
+
+</main>
+
+<div id="toast-container" aria-live="polite"></div>
+
+<script defer src="voice.js?v=3"></script>
+</body>
+</html>

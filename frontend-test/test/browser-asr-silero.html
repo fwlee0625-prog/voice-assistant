@@ -1,0 +1,52 @@
+<!doctype html><html lang="zh-CN"><meta charset="utf-8"><title>录音链路与 Silero 验证</title><style>body{font:16px system-ui;max-width:850px;margin:48px auto;line-height:1.8}button{padding:12px 24px}pre{white-space:pre-wrap}</style><h1>录音链路与 Silero 验证</h1><p>合成语音经真实 AudioWorklet 采集、真实 Silero 判断，ASR WebSocket 使用页面内模拟；不访问麦克风和云端。</p><button id="run">验证录音链路</button><pre id="result">等待开始</pre><script type="module">
+import { RealtimeAsr } from '/src/audio/realtimeAsr.ts'
+const out=document.querySelector('#result')
+document.querySelector('#run').onclick=async()=>{
+ document.querySelector('#run').disabled=true
+ const NativeSocket=window.WebSocket
+ let context,asr,stream
+ try{
+  out.textContent='准备真实 Web Audio 采集和 Silero'
+  context=new AudioContext({sampleRate:16000});await context.resume()
+  const target=context.createMediaStreamDestination();stream=target.stream
+  const activities=[];let bytes=0;let epoch=0;let firstPcm;let transfers=0;let prematureDecision=false;let endpoint=false;let gate=false
+  class MockSocket{
+   static OPEN=1
+   readyState=1;bufferedAmount=0;onmessage;onclose;onerror
+   constructor(url){if(!url.search.includes('turns=1'))throw new Error('missing turn negotiation');setTimeout(()=>this.emit({type:'ready'}),0)}
+   emit(event){this.onmessage?.({data:JSON.stringify(event)})}
+   send(data){
+    if(data instanceof ArrayBuffer){firstPcm??=new Int16Array(data.slice(0));bytes+=data.byteLength;if(bytes===1280){this.emit({type:'interaction',index:0,final:true,owner:1,parts:[{id:1,speakerId:1,text:'你好助手',action:'accept',reason:'addressed'}]});this.emit({type:'endpoint',epoch:0,mode:'model',probability:0.9})}return}
+    const message=JSON.parse(data)
+    if(message.type==='activity'){
+     activities.push(message.speaking);epoch=message.epoch
+     if(!message.speaking){
+      this.emit({type:'endpoint',epoch,mode:'model',probability:0.9})
+      this.emit({type:'interaction',index:0,final:true,owner:1,parts:[{id:1,speakerId:1,text:'你好助手',action:'accept',reason:'addressed'}]})
+     }
+    }
+    if(message.type==='end')this.emit({type:'done'})
+   }
+   close(){this.readyState=3;this.onclose?.()}
+  }
+  window.WebSocket=MockSocket
+  const state={status:'idle',segments:{},error:''}
+  asr=new RealtimeAsr(state,undefined,()=>{},()=>{},()=>{gate=true;if(bytes<2560)prematureDecision=true},()=>{endpoint=true;if(bytes<2560)prematureDecision=true},()=>({active:false,references:[],question:''}))
+  const prefix=[new Int16Array(640).fill(1234),new Int16Array(640).fill(2345)]
+  await asr.start(stream,()=>{transfers++;return prefix})
+  await new Promise(r=>setTimeout(r,100))
+  if(prematureDecision||transfers!==1||firstPcm?.[0]!==1234)throw new Error("唤醒预录音未按顺序进入 ASR")
+  if(state.vadStatus!=='silero')throw new Error('Silero 未启用：'+state.error)
+  const wav=await(await fetch('./fixtures/silero-speech.wav')).arrayBuffer()
+  const pcm=new Int16Array(wav,44)
+  const buffer=context.createBuffer(1,pcm.length,16000)
+  const channel=buffer.getChannelData(0);for(let i=0;i<pcm.length;i++)channel[i]=pcm[i]/32768
+  const source=context.createBufferSource();source.buffer=buffer;source.connect(target);source.start()
+  await new Promise(r=>setTimeout(r,buffer.duration*1000+1800))
+  await asr.finish()
+  if(state.status!=='done'||!activities.includes(true)||!activities.includes(false)||!endpoint||!gate||bytes===0)throw new Error(JSON.stringify({state,activities,endpoint,gate,bytes}))
+  out.textContent='全部通过\n唤醒预录音按顺序上传且只交接一次，补发期间不提前提交话轮\nSilero 模式：'+state.vadStatus+'\nPCM 上传字节：'+bytes+'\n开口/静音事件：'+JSON.stringify(activities)+'\n说话人决策与模型结果已送达对话层\n结束识别、flush 与资源释放正常'
+ }catch(e){out.textContent+='\n失败：'+e.message}
+ finally{asr?.dispose();stream?.getTracks().forEach(track=>track.stop());await context?.close();window.WebSocket=NativeSocket;document.querySelector('#run').disabled=false}
+}
+</script></html>

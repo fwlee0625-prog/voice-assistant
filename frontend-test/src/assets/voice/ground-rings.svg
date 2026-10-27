@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 260">
+  <defs>
+    <radialGradient id="pool"><stop stop-color="#49fff0" stop-opacity=".65"/><stop offset=".35" stop-color="#0ee4df" stop-opacity=".16"/><stop offset="1" stop-color="#10aabe" stop-opacity="0"/></radialGradient>
+    <linearGradient id="rim" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#0c7b94" stop-opacity=".1"/><stop offset=".6" stop-color="#27d9e7" stop-opacity=".45"/><stop offset="1" stop-color="#a7fffc"/></linearGradient>
+    <filter id="blur" x="-30%" y="-150%" width="160%" height="400%"><feGaussianBlur stdDeviation="6"/></filter>
+  </defs>
+  <ellipse cx="500" cy="135" rx="470" ry="108" fill="url(#pool)"/>
+  <g fill="none" stroke="url(#rim)">
+    <ellipse cx="500" cy="135" rx="460" ry="99" opacity=".18"/>
+    <ellipse cx="500" cy="135" rx="386" ry="77" opacity=".3"/>
+    <ellipse cx="500" cy="135" rx="318" ry="60" opacity=".5"/>
+    <ellipse cx="500" cy="135" rx="245" ry="42" stroke-width="9" filter="url(#blur)"/>
+    <ellipse cx="500" cy="135" rx="245" ry="42" stroke-width="2.4"/>
+    <ellipse cx="500" cy="135" rx="210" ry="32" opacity=".45"/>
+    <ellipse cx="500" cy="135" rx="170" ry="24" opacity=".24"/>
+  </g>
+  <ellipse cx="500" cy="151" rx="85" ry="8" fill="#5cfff2" opacity=".6" filter="url(#blur)"/>
+</svg>

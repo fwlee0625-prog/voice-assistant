@@ -1,0 +1,24 @@
+<!doctype html><html lang="zh-CN"><meta charset="utf-8"><title>本地 KWS 模型验证</title><style>body{font:16px system-ui;max-width:850px;margin:48px auto;line-height:1.8}button{padding:12px 24px}pre{white-space:pre-wrap}</style><h1>浏览器本地唤醒验证</h1><p>使用合成测试语音，不访问麦克风，不连接 ASR。</p><button id="run">测试真实 KWS 模型</button><pre id="result">等待开始</pre><script type="module">
+import { createKeywordSpotter } from '/src/audio/kws.ts'
+const out=document.querySelector('#result')
+document.querySelector('#run').onclick=async()=>{
+ let kws
+ document.querySelector('#run').disabled=true
+ try{
+  const hits=[];out.textContent='加载本地中文 KWS / WASM'
+  kws=await createKeywordSpotter(word=>{hits.push(word);out.textContent+='\n唤醒：'+word},error=>{out.textContent+='\n失败：'+error})
+  out.textContent='模型加载成功'
+  async function feed(pcm){for(let i=0;i<pcm.length;i+=640){kws.push(pcm.slice(i,i+640));await new Promise(r=>setTimeout(r,40))}}
+  const negative=await(await fetch('./fixtures/silero-speech.wav')).arrayBuffer()
+  await feed(new Int16Array(negative,44));await feed(new Int16Array(16000));
+  if(hits.length)throw new Error('普通测试语音误唤醒')
+  out.textContent+='\n普通语音未唤醒：通过'
+  kws.reset()
+  const positive=await(await fetch('./fixtures/kws-wake.wav')).arrayBuffer()
+  await feed(new Int16Array(positive,44));await feed(new Int16Array(16000));
+  if(!hits.includes('你好助手'))throw new Error('未识别到你好助手')
+  out.textContent+='\n全部通过：真实中文 KWS 在浏览器 Worker 本地识别唤醒词'
+ }catch(e){out.textContent+='\n失败：'+e.message}
+ finally{kws?.close();document.querySelector('#run').disabled=false}
+}
+</script></html>

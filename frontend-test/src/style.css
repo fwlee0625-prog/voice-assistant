@@ -1,0 +1,137 @@
+:root {
+  font-family:
+    'Inter', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', system-ui, sans-serif;
+  color: #dff8fc;
+  background: #02070b;
+  color-scheme: dark;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  border: 0;
+  background: none;
+  cursor: pointer;
+}
+
+h1,
+h2,
+p {
+  margin: 0;
+}
+
+.ui-select {
+  width: 100%;
+  min-width: 0;
+}
+
+.ui-select-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  padding: 11px 12px;
+  border: 1px solid rgba(100, 220, 240, 0.16);
+  border-radius: 9px;
+  font: inherit;
+  color: #e2fbff;
+  text-align: left;
+  background-color: rgba(8, 26, 34, 0.7);
+  cursor: pointer;
+  transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+
+.ui-select-trigger:hover:not(:disabled) {
+  border-color: rgba(130, 245, 255, 0.42);
+  background-color: rgba(10, 32, 41, 0.85);
+}
+
+.ui-select-trigger:focus-visible {
+  outline: 1px solid rgba(140, 246, 255, 0.75);
+  outline-offset: 1px;
+  border-color: rgba(110, 240, 255, 0.5);
+}
+
+.ui-select-trigger:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.ui-select-value {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ui-select-value.is-placeholder {
+  color: #4f7882;
+}
+
+.ui-select-arrow {
+  flex: none;
+  width: 10px;
+  height: 6px;
+  color: #6deeff;
+  transition: transform 0.18s ease;
+}
+
+.ui-select.is-open .ui-select-trigger {
+  border-color: rgba(110, 240, 255, 0.5);
+}
+
+.ui-select.is-open .ui-select-arrow {
+  transform: rotate(180deg);
+}
+
+.ui-select-list {
+  position: fixed;
+  z-index: 40;
+  max-height: 240px;
+  overflow-y: auto;
+  padding: 5px;
+  border: 1px solid rgba(110, 240, 255, 0.22);
+  border-radius: 11px;
+  background: linear-gradient(180deg, rgba(9, 32, 40, 0.98), rgba(4, 16, 21, 0.99));
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.6);
+  scrollbar-width: thin;
+  scrollbar-color: rgba(90, 200, 220, 0.35) transparent;
+}
+
+.ui-select-option {
+  padding: 9px 11px;
+  border-radius: 7px;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: #cfeef3;
+  cursor: pointer;
+}
+
+.ui-select-option.is-active {
+  color: #eafeff;
+  background-color: rgba(40, 223, 238, 0.14);
+}
+
+.ui-select-option.is-selected {
+  color: #7ff3ff;
+  font-weight: 600;
+}

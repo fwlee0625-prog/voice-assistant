@@ -1,0 +1,13 @@
+{
+  "text": "我在！",
+  "provider": "xiaomi",
+  "model": "mimo-v2.5-tts",
+  "voice": "冰糖",
+  "style": "温柔、轻快、带着微笑，尾音微微上扬，简短利落",
+  "styleControl": "user message; spoken text in assistant message",
+  "format": "PCM16 WAV",
+  "sampleRate": 24000,
+  "channels": 1,
+  "durationSeconds": 0.715,
+  "sha256": "abf76287ea5654e5ee6033c7ce32bf93dbd0c935a7930aad9b735b273bd622f0"
+}

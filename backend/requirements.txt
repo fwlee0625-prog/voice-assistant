@@ -1,0 +1,15 @@
+# Python >= 3.11; 独立语音服务，不依赖台球引擎 / CUDA。
+fastapi>=0.115,<1
+uvicorn>=0.30,<1
+requests>=2.32,<3
+python-dotenv>=1,<2
+chromadb>=1,<2
+edge-tts>=7,<8
+# 可选离线 TTS: pip install pyttsx3
+# 可选本地 embedding: pip install sentence-transformers
+# 人声增强（可选）: 模型需下载到 models/speech-enhancement/
+sherpa-onnx>=1.13,<2
+
+# 腾讯云实时 ASR WebSocket 代理
+aiohttp>=3.10,<4
+websockets>=13,<16

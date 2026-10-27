@@ -1,0 +1,35 @@
+<!doctype html><html lang="zh-CN"><meta charset="utf-8"><title>唤醒生命周期验证</title><style>body{font:16px system-ui;max-width:850px;margin:48px auto;line-height:1.8}button{padding:12px 24px}pre{white-space:pre-wrap}</style><h1>本地唤醒生命周期验证</h1><p>真实 KWS、AudioWorklet 和合成音轨；不访问麦克风、不连接云服务。</p><button id="run">测试唤醒与音频交接</button><pre id="result">等待开始</pre><script type="module">
+import { WakeListener } from '/src/audio/wakeListener.ts'
+const out=document.querySelector('#result'), button=document.querySelector('#run')
+button.onclick=async()=>{
+ let listener, context; const errors=[], hits=[]; button.disabled=true;out.textContent='加载模型'
+ const assert=(value,message)=>{if(!value)throw Error(message);out.textContent+='\n通过：'+message}
+ const wait=ms=>new Promise(r=>setTimeout(r,ms))
+ try{
+  context=new AudioContext({sampleRate:16000});await context.resume()
+  const dest=context.createMediaStreamDestination()
+  listener=await WakeListener.create((input,word)=>hits.push({input,word}),message=>errors.push(message))
+  const bytes=await(await fetch('./fixtures/kws-wake.wav')).arrayBuffer()
+  const wav=await context.decodeAudioData(bytes)
+  async function play(){const source=context.createBufferSource();source.buffer=wav;source.connect(dest);source.start();await wait((wav.duration+1)*1000)}
+  await listener.listen(dest.stream);out.textContent='采集与模型已就绪'
+  listener.setSuppressed(true);await play()
+  assert(hits.length===0,'播报抑制期间不唤醒')
+  listener.setSuppressed(false);await wait(1400);await play()
+  assert(hits.length===1&&hits[0].word==='你好助手','真实音轨触发一次唤醒')
+  const frames=hits[0].input.takePreroll()
+  assert(frames.length>0&&frames.length<=150&&frames.some(f=>f.some(n=>Math.abs(n)>100)),'交接保留唤醒前后有效 PCM，缓冲有上限')
+  assert(hits[0].input.takePreroll().length===0,'预录音只能交接一次')
+  await listener.listen(dest.stream);await play()
+  assert(hits.length===2,'回到待机后可以再次唤醒')
+  hits[1].input.takePreroll();await listener.listen(dest.stream)
+  const manual=listener.beginManual()
+  assert(!!manual,'待机时仍支持手动开始')
+  listener.setPromptPlaying(true);await wait(400);listener.setPromptPlaying(false)
+  await wait(200);const manualFrames=manual.takePreroll();assert(manualFrames.length>0&&manualFrames.length<=8,'应答期间丢弃音频，播放后恢复交接')
+  assert(errors.length===0,'生命周期无模型或音频异常')
+  out.textContent+='\n全部通过'
+ }catch(e){out.textContent+='\n失败：'+e.message+' '+errors.join('; ')}
+ finally{listener?.dispose();await context?.close();button.disabled=false}
+}
+</script></html>

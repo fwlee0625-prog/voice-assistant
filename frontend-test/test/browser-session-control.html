@@ -1,0 +1,63 @@
+<!doctype html><html lang="zh-CN"><meta charset="utf-8"><title>会话退出顺序验证</title>
+<style>body{font:16px system-ui;margin:24px}#result{white-space:pre-wrap}button{padding:10px}</style>
+<h1>结束语播放与麦克风释放</h1><p>使用合成音轨和模拟 ASR/TTS，无真实麦克风、无云请求。结束语以一秒测试音频代替。</p>
+<button id="run">验证退出流程</button><button id="wakeEnd">验证退出后待唤醒</button><button id="disable">验证关闭全部监听</button><pre id="result">等待开始</pre><div id="app"></div>
+<script type="module">
+import {createApp} from 'vue'
+import RecordView from '/src/views/RecordView.vue'
+const out=document.querySelector('#result'),run=document.querySelector('#run')
+async function verify(wake=false,disable=false){
+ document.querySelectorAll('body>button').forEach(b=>b.disabled=true);out.textContent='准备验证'
+ const nativeSocket=window.WebSocket,nativeFetch=window.fetch,nativeMic=navigator.mediaDevices.getUserMedia
+ let app,context,socket,track,ttsCalls=0
+ const wait=ms=>new Promise(r=>setTimeout(r,ms))
+ async function until(fn){const start=performance.now();while(!fn()){if(performance.now()-start>15000)throw Error('等待超时');await wait(30)}}
+ const click=text=>{const button=[...document.querySelectorAll('#app button')].find(b=>(b.getAttribute('aria-label')||b.textContent.trim())===text);if(!button)throw Error('找不到按钮：'+text);button.click()}
+ try{
+  context=new AudioContext({sampleRate:16000});await context.resume()
+  const destination=context.createMediaStreamDestination();track=destination.stream.getAudioTracks()[0]
+  navigator.mediaDevices.getUserMedia=async()=>destination.stream
+  class MockSocket{
+   static OPEN=1;readyState=1;bufferedAmount=0;onmessage;onclose;onerror
+   constructor(){socket=this;setTimeout(()=>this.event({type:'ready'}),0)}
+   event(value){this.onmessage?.({data:JSON.stringify(value)})}
+   send(){}
+   close(){this.readyState=3;this.onclose?.()}
+  }
+  window.WebSocket=MockSocket
+  window.fetch=async(input,init)=>{
+   if(String(input)==='/api/tts'){
+    ttsCalls++;if(!JSON.parse(init.body).text.includes('再见'))throw Error('缺少结束语')
+    const bytes=new Uint8Array(48000)
+    const event={type:'audio',data:btoa(String.fromCharCode(...bytes)),sampleRate:24000,channels:1,format:'pcm16'}
+    return new Response('data: '+JSON.stringify(event)+'\n\ndata: {"type":"done"}\n\n',{headers:{'Content-Type':'text/event-stream'}})
+   }
+   if(String(input).startsWith('/api/'))throw Error('意外业务请求：'+input)
+   return nativeFetch(input,init)
+  }
+  app=createApp(RecordView);app.mount('#app')
+  if(wake){click('语音唤醒');await until(()=>document.querySelector('#app').textContent.includes('等待唤醒'))}
+  click('开始对话')
+  await until(()=>[...document.querySelectorAll('#app button')].some(b=>b.getAttribute('aria-label')==='结束对话'))
+  socket.event({type:'interaction',index:1,final:true,owner:1,parts:[{id:1,speakerId:1,text:disable?'关闭麦克风':'退出',action:disable?'disable_listening':'end_conversation',reason:'user_end'}]})
+  await until(()=>ttsCalls===1);await wait(100)
+  if(track.readyState!=='live'||socket.readyState!==1)throw Error('结束语播放前提前关闭')
+  socket.event({type:'interaction',index:2,final:true,owner:1,parts:[{id:2,speakerId:1,text:'迟到问题',action:'accept',reason:'owner'}]})
+  out.textContent='通过：结束语播放期间保留当前会话，屏蔽迟到识别'
+  if(wake&&!disable){
+   await until(()=>socket.readyState===3&&document.querySelector('#app').textContent.includes('等待唤醒'))
+   if(track.readyState!=='live')throw Error('退出对话后应保留本地唤醒麦克风')
+  }else await until(()=>track.readyState==='ended')
+  if(socket.readyState!==3||ttsCalls!==1)throw Error('ASR 未关闭或重复播报')
+  if(![...document.querySelectorAll('#app button')].some(b=>b.getAttribute('aria-label')==='开始对话'))throw Error('按钮未恢复')
+  out.textContent+='\n通过：实际音频播放结束后关闭 ASR、恢复开始按钮'
+  out.textContent+=wake&&!disable?'\n通过：返回本地唤醒待机，保留麦克风':'\n通过：释放麦克风'
+  if(disable&&document.querySelector('#app').textContent.includes('关闭唤醒'))throw Error('语音唤醒未关闭')
+  out.textContent+='\n全部通过'
+ }catch(error){out.textContent+='\n失败：'+error.message}
+ finally{app?.unmount();await context?.close();window.WebSocket=nativeSocket;window.fetch=nativeFetch;navigator.mediaDevices.getUserMedia=nativeMic;document.querySelectorAll('body>button').forEach(b=>b.disabled=false)}
+}
+run.onclick=()=>verify()
+document.querySelector('#wakeEnd').onclick=()=>verify(true)
+document.querySelector('#disable').onclick=()=>verify(true,true)
+</script></html>

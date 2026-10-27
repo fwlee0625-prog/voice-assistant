@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="zh">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>对话气泡预览</title>
+    <style>
+      html, body { margin: 0; height: 100%; background: #02070b; font-family: system-ui, sans-serif; }
+      #app { height: 100%; display: flex; justify-content: flex-end; }
+      .panel {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        width: 380px;
+        height: 100%;
+        padding: 18px 16px 14px;
+        box-sizing: border-box;
+        border: 1px solid rgba(98, 226, 246, 0.16);
+        border-right: 0;
+        border-radius: 20px 0 0 20px;
+        background: linear-gradient(180deg, rgba(6, 24, 32, 0.93), rgba(3, 13, 19, 0.96));
+        color: #e5fcff;
+      }
+      .panel h2 { margin: 0; font-size: 15px; }
+    </style>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module">
+      import { createApp, h } from 'vue'
+      import ConversationMessages from '/src/components/ConversationMessages.vue'
+      const turns = [
+        { index: 0, user: '你好。', status: 'done', assistant: '你好呀，有什么我可以帮你的吗？', visibleAssistant: '你好呀，有什么我可以帮你的吗？' },
+        { index: 1, user: '你在做什么啊。', status: 'done', assistant: '嗯，我在这儿陪你聊天呢，正等着看看有什么能帮上你的。', visibleAssistant: '嗯，我在这儿陪你聊天呢，正等着看看有什么能帮上你的。' },
+      ]
+      createApp({
+        render: () => h('div', { class: 'panel' }, [
+          h('h2', '对话记录'),
+          h(ConversationMessages, { conversation: { turns }, interim: '' }),
+        ]),
+      }).mount('#app')
+    </script>
+  </body>
+</html>

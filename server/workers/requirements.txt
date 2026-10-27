@@ -1,0 +1,3 @@
+# Python >=3.11; only offline denoising. No web/LLM/RAG dependencies.
+numpy>=1.26,<3
+sherpa-onnx>=1.13,<2

@@ -1,0 +1,56 @@
+<!doctype html><html lang="zh-CN"><meta charset="utf-8"><title>语音逐字展示验证</title>
+<style>body{font:16px system-ui;max-width:850px;margin:40px auto;line-height:1.8}button{padding:12px 24px}pre{white-space:pre-wrap}#preview{border:1px solid #ddd;margin-top:20px}</style>
+<h1>语音逐字展示验证</h1><p>使用真实 Web Audio 和模拟 SSE 静音音频，不采集麦克风、不调用云端。</p>
+<button id="run">运行验证</button><pre id="result">等待开始</pre><div id="preview"></div>
+<script type="module">
+import { createApp, h, nextTick } from 'vue'
+import { createConversation } from '/src/chat/conversation.ts'
+import { prepareSpeechPlayback } from '/src/audio/speechPlayer.ts'
+import ConversationMessages from '/src/components/ConversationMessages.vue'
+const out = document.querySelector('#result')
+const wait = async predicate => { const start = performance.now(); while (!predicate()) { if (performance.now() - start > 8000) throw new Error('等待超时'); await new Promise(resolve => setTimeout(resolve, 20)) } }
+const assert = (ok, label) => { if (!ok) throw new Error(label); out.textContent += '\n通过：' + label }
+const packet = event => new TextEncoder().encode('data: ' + JSON.stringify(event) + '\n\n')
+const pcm = btoa(String.fromCharCode(...new Uint8Array(48000)))
+let app
+ document.querySelector('#run').onclick = async () => {
+ const button = document.querySelector('#run'); button.disabled = true
+ const nativeFetch = window.fetch
+ let session
+ try {
+  app?.unmount(); await prepareSpeechPlayback(); out.textContent = '开始验证'
+  window.fetch = async () => new Response(new ReadableStream({start(c) {
+   const events = [
+    {type:'speech',enabled:true}, {type:'text',delta:'第一句话慢慢展示。第二句话随后展示。'},
+    {type:'audio',data:pcm,sampleRate:24000,channels:1,format:'pcm16',text:'第一句话慢慢展示。',sentenceId:0,start:0,end:9},
+    {type:'sentence_end',sentenceId:0},
+    {type:'audio',data:pcm,sampleRate:24000,channels:1,format:'pcm16',text:'第二句话随后展示。',sentenceId:1,start:9,end:18},
+    {type:'sentence_end',sentenceId:1}, {type:'done'}
+   ]
+   for (const event of events) c.enqueue(packet(event)); c.close()
+  }}), {headers:{'Content-Type':'text/event-stream'}})
+  session = createConversation()
+  app = createApp({render:()=>h(ConversationMessages,{conversation:session.state})}); app.mount('#preview')
+  session.accept(0,'验证逐字展示？'); session.finish()
+  await wait(()=>session.state.turns[0]?.assistant)
+  const turn = session.state.turns[0]
+  assert(turn.visibleAssistant === '', '模型已完成，音频开始前不提前显示全文')
+  await wait(()=>turn.visibleAssistant.length > 1)
+  assert(turn.visibleAssistant.length < 9, '第一句在真实音频播放中逐字显示')
+  await nextTick()
+  assert(document.querySelector('#preview .assistant p').textContent === turn.visibleAssistant, '生产消息组件展示播放进度文字')
+  await wait(()=>turn.visibleAssistant.length > 9)
+  assert(turn.visibleAssistant.length < 18, '第二句开始后才展示第二句文字')
+  await wait(()=>!session.state.answering)
+  assert(turn.visibleAssistant === turn.assistant, '全部播放结束后补齐完整文字')
+  session.accept(1,'再次验证？'); session.finish()
+  await wait(()=>session.state.turns[1]?.visibleAssistant.length > 1)
+  const interrupted = session.state.turns[1]
+  session.interrupt(); const frozen = interrupted.visibleAssistant
+  await new Promise(resolve=>setTimeout(resolve,300))
+  assert(interrupted.status === 'interrupted' && interrupted.visibleAssistant === frozen, '中途打断停止音频及后续出字')
+  out.textContent += '\n全部通过'
+ } catch(error) { out.textContent += '\n失败：' + error.message }
+ finally { session?.dispose(); window.fetch = nativeFetch; button.disabled = false }
+}
+</script></html>
