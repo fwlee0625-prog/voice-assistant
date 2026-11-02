@@ -17,3 +17,5 @@ frontend-test/public/vad/
 
 frontend-test/public/kws/
 frontend-test/.model-cache/
+
+.pnpm-store/
