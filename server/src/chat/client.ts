@@ -13,14 +13,14 @@ export function validateMessages(body: unknown): ChatMessage[] {
     throw new HttpError(400, 'messages 需包含 1–100 条有效消息，并以 user 消息结束');
   return messages.map(m => ({ role: m.role, content: m.content }));
 }
-export async function completeChat(settings: Preferences, key: string, messages: ChatMessage[], signal: AbortSignal) {
+export async function completeChat(settings: Preferences, key: string, messages: ChatMessage[], signal: AbortSignal, systemPrompt?: string) {
   if (!key) throw new HttpError(503, '请先在设置中配置 OpenAI API Key');
   try {
     const response = await fetch(settings.baseUrl + '/chat/completions', {
       method: 'POST', redirect: 'error', signal: AbortSignal.any([signal, AbortSignal.timeout(60000)]),
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
       body: JSON.stringify({ model: settings.model, stream: false, messages: [
-        { role: 'system', content: [settings.systemPrompt, voiceReplyPrompt].filter(Boolean).join('\n\n') }, ...messages,
+        { role: 'system', content: systemPrompt ?? [settings.systemPrompt, voiceReplyPrompt].filter(Boolean).join('\n\n') }, ...messages,
       ] }),
     });
     if (!response.ok) {
@@ -42,9 +42,10 @@ export async function completeChat(settings: Preferences, key: string, messages:
 }
 
 /** Provider tool fragments stay here; only validated controls reach the caller. */
-export async function* streamChat(settings: Preferences, key: string, messages: ChatMessage[], signal: AbortSignal, onControl?: (action: ControlAction) => Promise<void>): AsyncGenerator<string> {
+export async function* streamChat(settings: Preferences, key: string, messages: ChatMessage[], signal: AbortSignal, onControl?: (action: ControlAction) => Promise<void>, onStage?: (stage: string) => Promise<void>): AsyncGenerator<string> {
   if (!key) throw new HttpError(503, '请先在设置中配置模型 API Key');
   try {
+    await onStage?.('model.request');
     const response = await fetch(settings.baseUrl + '/chat/completions', {
       method: 'POST', redirect: 'error', signal: AbortSignal.any([signal, AbortSignal.timeout(60000)]),
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
@@ -57,6 +58,8 @@ export async function* streamChat(settings: Preferences, key: string, messages: 
       throw new HttpError(502, response.status === 401 || response.status === 403
         ? '模型鉴权失败，请检查 API Key 和访问权限' : `模型服务请求失败（${response.status}）`);
     }
+    await onStage?.('model.headers');
+    let firstDelta = true;
     let text = ''; let finished = false; let toolFinished = false;
     const calls = new Map<number, { name: string; args: string }>();
     for await (const data of readSse(response)) {
@@ -73,6 +76,7 @@ export async function* streamChat(settings: Preferences, key: string, messages: 
       }
       const delta = choice?.delta?.content;
       if (typeof delta === 'string' && delta) {
+        if (firstDelta) { firstDelta = false; await onStage?.('model.first_delta'); }
         text += delta;
         if (text.length > 16000) throw new HttpError(502, '模型回答过长');
         yield delta;
@@ -83,6 +87,7 @@ export async function* streamChat(settings: Preferences, key: string, messages: 
       }
     }
     if (!finished) throw new HttpError(502, '模型回答连接中断，请重试');
+    await onStage?.('model.end');
     if (calls.size) {
       if (!toolFinished || calls.size !== 1 || !onControl) throw new HttpError(502, '会话控制调用未完成');
       const call = calls.values().next().value!;

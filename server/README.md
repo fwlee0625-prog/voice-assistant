@@ -57,6 +57,8 @@ Node >=22.18（当前开发为 24），在本目录执行 `pnpm install`。复�
 | src/settings/routes.ts | 设置 HTTP 契约与来源检查 |
 | src/chat/control.ts | 会话控制工具白名单、参数校验、控制提示词与明确结束指令 |
 | src/chat/client.ts | 消息校验、OpenAI 兼容请求与安全错误映射 |
+| src/wake/phonemes.ts | 中文唤醒词的专用 LLM 提示词、模型词表校验与声调容错扩展 |
+| src/wake/routes.ts | 唤醒词识别 HTTP 契约、来源检查与断连取消 |
 | src/chat/routes.ts | 对话 HTTP/SSE 生命周期、背压与断连取消 |
 | src/chat/tone.ts | 语音回答提示词、流式语气标记提取与正文清理 |
 | src/chat/speech.ts | 对话播报桥接：并行文字生成与顺序语音合成 |
@@ -80,6 +82,7 @@ Node >=22.18（当前开发为 24），在本目录执行 `pnpm install`。复�
 ### 配置与模型回答
 
 - `GET /api/settings`：返回 `{baseUrl, model, systemPrompt, apiKeyConfigured, tts, ttsApiKeyConfigured}`。不返回密钥。
+- `POST /api/wake/phonemes`：JSON `{text}`，1–20 个汉字。复用已保存的模型地址、模型名和密钥，使用 `src/wake/phonemes.ts` 中的专用 prompt，不使用对话人设或 TTS。返回 `{text,phonemes,variants}`：标准音素及常见变调、声调容错（最多 96 种完整读音）；生成内容按本地 `frontend-test/public/kws/tokens.txt` 校验，补齐所有词表支持的单音节声调替换与整句同调读法，不穷举指数级组合。无效输入 400，来源不允许 403，无密钥/词表 503，上游错误或无效生成 502；60 秒超时，客户端断连取消上游。结果由前端点击保存后写入当前浏览器，不写入服务端配置。
 - `PUT /api/settings`：JSON `{baseUrl, model, systemPrompt, apiKey?, tts?, ttsApiKey?}`；完整替换普通配置，非空 apiKey 更新密钥。成功返回与 GET 相同的对象。配置校验失败 400，不允许的浏览器 Origin 为 403；配置读写错误为安全 JSON 错误。JSON 请求体上限 256KB。
 - `POST /api/chat/completions`：JSON `{messages:[{role:"user"|"assistant",content:string}]}`；1–100 条，单条最多 16000 字符，最后一条必须是 user。服务端添加配置中的系统提示词，向 `{baseUrl}/chat/completions` 发送非流式 OpenAI Chat Completions 请求。成功 `{text,model}`；无密钥 503，参数错误 400，上游错误/超时/空回答 502。请求最长 60 秒，客户端断连取消上游请求；供应商原始错误不返回前端。前端保留最近 49 轮完整上下文及当前问题。
 - 对话页发送 `stream:true` 使用流式分支：上游 `stream:true`，下游 `Content-Type: text/event-stream`。每帧 `data: <JSON>\n\n`，事件为 `{type:"speech",enabled}`、`{type:"text",delta}`、`{type:"audio",data,sampleRate:24000,channels:1,format:"pcm16",text,sentenceId,start,end}`、`{type:"filler_audio",data,sampleRate:24000,channels:1,format:"pcm16",text}`、`{type:"sentence_end",sentenceId}`、`{type:"speech_error",error}`、`{type:"error",error}`、`{type:"done"}`。speech 为首个事件，表示本次是否开启自动播报。audio.data 为 base64；sentenceId 从 0 递增，同一句所有音频块共用编号，start/end 是移除语气标记后完整回答正文的 UTF-16 区间（左闭右开，包含清理前的 Markdown/空白）。sentence_end 表示该句合成完成，之后不再发送该句音频，不代表播放完毕。供应商差异只能出现在适配器内。done 表示文字与合成均结束，不代表扬声器已经播放完毕；前端等播放结束再处理下一轮。独立 `/api/tts` 保持原有 audio/error/done 契约，不发送这些对话句子事件。
@@ -90,6 +93,7 @@ Node >=22.18（当前开发为 24），在本目录执行 `pnpm install`。复�
 - 模型总等待最多 60 秒；每句 TTS 最多 30 秒；流式 HTTP 总生命周期最多 240 秒；下行背压超过 10 秒取消。断连会取消模型和合成。模型流不完整时保留部分文字并报错；重试从头替换回答。删除对话、离开页面、开始新会话会停止旧音频并取消旧请求；手动结束录音仍会提交尾句并播放回答；语音退出不提交尾句。
 - `tts` 为 `{enabled:boolean,provider:"xiaomi",voice:string,filler:boolean,fillers:string[]}`，默认开启、小米、冰糖、开启衔接词；`filler` 控制思考期是否先播报衔接词，`fillers` 是用户在设置里维护的衔接词列表（最多 20 条、每条不超过 20 字，默认 5 条内置文案）。列表为空时思考期不开口；非空时本地决策选择列表中的文案或保持安静。中文音色：冰糖、茉莉、苏打、白桦；英文：Mia、Chloe、Milo、Dean。现阶段仅实现小米 `mimo-v2.5-tts` 预置音色，不提供尚未接入的供应商选项。小米密钥在设置弹框填写或通过 `MIMO_API_KEY` 提供，不能复用 DeepSeek 密钥。
 - 前端通过 Web Audio 播放 PCM16，跨分片保留不足一个采样的字节，播放缓冲约 15 秒后施加背压。开始对话的点击会解锁播放；播放被浏览器限制时显示提示，文字照常返回。
+- 对话流诊断：请求头 `X-Voice-Diagnostics: 1` 时返回随机 `X-Voice-Trace` 请求编号，每条 SSE 事件附带 `diagnostic:{sequence,elapsedMs}`（从 0 递增的序号、从流准备开始计算的单调时钟毫秒数）。用于浏览器本地诊断关联，不保存服务端日志、不记录密钥或对话正文；未开启时保持原事件契约。浏览器「设置 → 语音诊断」可导出分片接收、播放缓冲、音量及波形指标，详见 `frontend-test/README.md`。
 - 回答文字随语音逐句、句内逐字展示，以 AudioContext 播放时间和实际音频时长估算进度，网络缓冲空档不推进；句子尚未合成完时按估计语速出字并保留尾部，收到 sentence_end 后按完整时长收尾。文字只向前增长，每句播完补齐，全部播放结束后补齐原文尾部。未开启语音、合成/播放失败时恢复文字流显示；打断停止声音和出字，迟到进度无效。完整模型文本单独保留用于后续上下文。此功能没有供应商逐字时间戳，属于句内近似同步。
 
 ```json
@@ -235,3 +239,7 @@ Chrome 本地测试页（test/ 不进入生产构建）：
 候选最多 20 条，服务端按每组最多 7 条加“保持安静”分组，一次请求最多 3 个问题。每组选出的文案相对本组“保持安静”的概率比用于候选间排序；这只是启发式排序，不是跨组校准的置信度。上下文只保留当前问题前 800 字和最近两条消息各 250 字；默认文案附带用途描述，自定义文案按文本语义判断。概率没有按本业务校准，实际匹配质量需听测和样本评估。
 
 页面生命周期验证：`http://localhost:5178/test/browser-session-control.html`，点击验证按钮；合成音轨、模拟 ASR/TTS 和真实 Web Audio 验证结束语播放后才关闭识别、释放麦克风及忽略迟到识别，无真实采音或云请求。
+
+### 逐节点诊断事件
+
+仅 `X-Voice-Diagnostics: 1` 请求额外发送 `{type:"timing",stage,sentenceId?,diagnostic:{sequence,elapsedMs}}`。stage 包括 `request.ready`、`model.request`、`model.headers`、`model.first_delta`、`model.end`、逐句 `tts.request`、`tts.first_audio`、`tts.end`。`model.first_delta` 包含未清理的语气标记；正文首字仍由 `text` 标识。时间从路由收到请求起计算，包含读取设置；失败/取消不补造完成节点。正常请求不增加事件、不记录服务端日志。前端按 trace、requestId、player 关联并生成耗时分析。模型首字仅指 content，不包括 reasoning_content。

@@ -113,14 +113,18 @@ let analyser: AnalyserNode | null = null
 let sourceNode: MediaStreamAudioSourceNode | null = null
 let disposed = false // 组件已卸载，异步回调据此放弃更新状态
 
-// 把 getUserMedia 抛出的 DOMException 转成可读提示
-function describeError(err: unknown) {
+// 保留启动异常的真实原因，未知错误不能一律归为麦克风权限问题。
+function describeError(err: unknown, action = '无法开始对话') {
+  console.error('[voice] 启动失败', err)
   if (err instanceof DOMException) {
     if (err.name === 'NotAllowedError') return '麦克风权限被拒绝，请在浏览器地址栏允许访问麦克风'
     if (err.name === 'NotFoundError') return '没有检测到可用的麦克风设备'
-    if (err.name === 'NotReadableError') return '麦克风被其他程序占用，请关闭后重试'
+    if (err.name === 'NotReadableError') return '浏览器无法读取麦克风，可能是设备被占用或系统音频异常，请检查设备后重试'
+    if (err.name === 'AbortError') return '麦克风启动被中断，请确认设备连接正常后重试'
+    if (err.name === 'OverconstrainedError') return '麦克风不支持当前音频设置，请调整设置后重试'
   }
-  return '无法开始对话，请检查麦克风设备和浏览器权限'
+  if (err instanceof Error) return `${action}：${err.message || err.name}`
+  return `${action}，发生未知错误，请重试`
 }
 
 // 只把麦克风接到 analyser 用于取舞台音量，不连到 destination，避免声音被再次播放
@@ -335,7 +339,7 @@ async function toggleWake() {
       if (wakeEnabled.value && isRecording.value && !starting.value && !conversation?.answering && !conversation?.userSpeaking && !conversation?.pendingText && Date.now() - lastInteractionAt >= 5000) stopRecording()
     }, 100)
   } catch (err) {
-    if (!controller.signal.aborted && !disposed) { error.value = describeError(err); disableWake() }
+    if (!controller.signal.aborted && !disposed) { error.value = describeError(err, '无法开启语音唤醒'); disableWake() }
   } finally { if (wakeInit === controller) { wakeLoading.value = false; wakeInit = undefined } }
 }
 // Restart the five-second window after speech or playback ends, including speech without an ASR result.

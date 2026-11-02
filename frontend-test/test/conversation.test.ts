@@ -438,3 +438,30 @@ test('farewell timeout cancels synthesis and still completes shutdown', async t 
   t.mock.timers.tick(1); await closing
   assert.equal(signal?.aborted, true); assert.equal(closed, 1); assert.equal(chat.state.answering, false); chat.dispose()
 })
+
+test('turn diagnostics link accepted ASR, endpoint, request and completion without text', async t => {
+  const { configureSpeechDiagnostics, clearSpeechDiagnostics, speechDiagnosticReport } = await import('../src/audio/speechDiagnostics.ts')
+  clearSpeechDiagnostics(); configureSpeechDiagnostics(true)
+  t.mock.method(globalThis, 'fetch', async (_url, init) => {
+    assert.equal(new Headers(init?.headers).get('X-Voice-Diagnostics'), '1')
+    return new Response('data: {"type":"text","delta":"private-answer"}\n\ndata: {"type":"done"}\n\n',
+      { headers: { 'Content-Type': 'text/event-stream', 'X-Voice-Trace': 'test-turn' } })
+  })
+  const chat = createConversation(() => ({ ...player(), diagnosticId: 'test-player' }))
+  t.after(() => { chat.dispose(); configureSpeechDiagnostics(false); clearSpeechDiagnostics() })
+  chat.speechActivity(true)
+  chat.accept(1, 'private-question', false)
+  chat.speechActivity(false, 0)
+  chat.accept(1, 'private-question', true)
+  chat.endpoint(0.9)
+  chat.finish(); await tick()
+  const report = speechDiagnosticReport()
+  assert.equal(report.analysis.length, 1)
+  assert.equal(report.analysis[0]!.requestId, 'test-turn')
+  assert.equal(report.analysis[0]!.status, 'done')
+  assert.notEqual(report.analysis[0]!.metrics.finalToCommitMs, null)
+  assert.notEqual(report.analysis[0]!.metrics.turnWaitMs, null)
+  assert.ok(report.events.some(e => e.event === 'endpoint.result'))
+  assert.ok(!JSON.stringify(report).includes('private-question'))
+  assert.ok(!JSON.stringify(report).includes('private-answer'))
+})

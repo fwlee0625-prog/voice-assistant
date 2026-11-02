@@ -6,6 +6,7 @@
 import { createApp, h, nextTick } from 'vue'
 import { createConversation } from '/src/chat/conversation.ts'
 import { prepareSpeechPlayback } from '/src/audio/speechPlayer.ts'
+import { clearSpeechDiagnostics, configureSpeechDiagnostics, speechDiagnosticReport, capturedSpeechWav } from '/src/audio/speechDiagnostics.ts'
 import ConversationMessages from '/src/components/ConversationMessages.vue'
 const out = document.querySelector('#result')
 const wait = async predicate => { const start = performance.now(); while (!predicate()) { if (performance.now() - start > 8000) throw new Error('等待超时'); await new Promise(resolve => setTimeout(resolve, 20)) } }
@@ -19,6 +20,7 @@ let app
  let session
  try {
   app?.unmount(); await prepareSpeechPlayback(); out.textContent = '开始验证'
+  clearSpeechDiagnostics(); configureSpeechDiagnostics(true, true)
   window.fetch = async () => new Response(new ReadableStream({start(c) {
    const events = [
     {type:'speech',enabled:true}, {type:'text',delta:'第一句话慢慢展示。第二句话随后展示。'},
@@ -43,6 +45,11 @@ let app
   assert(turn.visibleAssistant.length < 18, '第二句开始后才展示第二句文字')
   await wait(()=>!session.state.answering)
   assert(turn.visibleAssistant === turn.assistant, '全部播放结束后补齐完整文字')
+  const chunks = speechDiagnosticReport().events.filter(entry => entry.event === 'playback.chunk')
+  assert(chunks.length === 2 && chunks.every(entry => entry.fields.samples === 24000), '诊断记录真实 Web Audio 分片采样数')
+  assert(chunks[1].fields.scheduledAt === chunks[0].fields.scheduledAt + 1, '诊断调度时间连续，无人工片间空隙')
+  assert(chunks.every(entry => entry.fields.outputSampleRate > 0 && entry.fields.rms === 0), '诊断记录设备采样率和静音波形指标')
+  assert(capturedSpeechWav()?.length === 44 + 96000, '诊断 WAV 包含完整接收音频')
   session.accept(1,'再次验证？'); session.finish()
   await wait(()=>session.state.turns[1]?.visibleAssistant.length > 1)
   const interrupted = session.state.turns[1]
@@ -51,6 +58,6 @@ let app
   assert(interrupted.status === 'interrupted' && interrupted.visibleAssistant === frozen, '中途打断停止音频及后续出字')
   out.textContent += '\n全部通过'
  } catch(error) { out.textContent += '\n失败：' + error.message }
- finally { session?.dispose(); window.fetch = nativeFetch; button.disabled = false }
+ finally { session?.dispose(); configureSpeechDiagnostics(false); clearSpeechDiagnostics(); window.fetch = nativeFetch; button.disabled = false }
 }
 </script></html>

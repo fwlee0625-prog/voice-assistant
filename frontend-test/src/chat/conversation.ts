@@ -4,10 +4,11 @@ import { readReply, type ControlAction } from './stream.ts'
 import { endpointDelay } from './endpoint.ts'
 import { filterEcho } from './echoGuard.ts'
 import { createSpeechPlayer, type SpeechPlayer, type SpeechProgress } from '../audio/speechPlayer.ts'
+import { diagnosticId, diagnosticTime, diagnosticsEnabled, recordSpeechDiagnostic } from '../audio/speechDiagnostics.ts'
 export interface Turn {
   index: number; user: string; assistant: string; visibleAssistant: string
   status: 'queued' | 'loading' | 'done' | 'error' | 'interrupted'
-  error: string; speechError?: string
+  error: string; speechError?: string; diagnosticId?: string
 }
 export interface Conversation { turns: Turn[]; pendingText: string; userSpeaking: boolean; notice: string; answering: boolean; owner?: number; closing?: boolean; endpointMode?: 'model' | 'rules' }
 interface ActiveReply { turn: Turn; controller: AbortController; player: SpeechPlayer }
@@ -19,6 +20,10 @@ export function createConversation(playerFactory: (onProgress: (progress: Speech
   let ended = false
   let active: ActiveReply | undefined
   let recentPlayers: SpeechPlayer[] = []
+  const sessionId = diagnosticId('session')
+  let silenceObserved: number | undefined
+  let finalAt: number | undefined
+  let endpointAt: number | undefined
   let silenceAt: number | undefined
   let microphoneSpeaking = false
   let turnDetection = false
@@ -111,7 +116,10 @@ export function createConversation(playerFactory: (onProgress: (progress: Speech
     pending.clear(); silenceAt = undefined; updatePendingText()
     if (!text.trim()) return
     state.notice = ''
-    state.turns.push({ index, user: text, assistant: '', visibleAssistant: '', status: 'queued', error: '' })
+    const trace = diagnosticId('turn')
+    recordSpeechDiagnostic('turn.commit', { trace, sessionId, turn: index, silenceAtMs: silenceObserved === undefined ? -1 : diagnosticTime(silenceObserved), finalAtMs: finalAt === undefined ? -1 : diagnosticTime(finalAt), endpointAtMs: endpointAt === undefined ? -1 : diagnosticTime(endpointAt) })
+    silenceObserved = undefined; finalAt = undefined; endpointAt = undefined
+    state.turns.push({ diagnosticId: trace, index, user: text, assistant: '', visibleAssistant: '', status: 'queued', error: '' })
     drain()
   }
   function drain() {
@@ -145,10 +153,13 @@ export function createConversation(playerFactory: (onProgress: (progress: Speech
         .flatMap(t => [...(t.user ? [{ role: 'user', content: t.user }] : []), {
           role: 'assistant', content: t.status === 'interrupted' ? '（这条回答被用户打断，未完整播报。）' : t.assistant,
         }])
+      recordSpeechDiagnostic('reply.request', { trace: turn.diagnosticId || '', player: player.diagnosticId || 'custom', turn: turn.index })
       const response = await fetch('/api/chat/completions', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: controller.signal,
+        method: 'POST', headers: { 'Content-Type': 'application/json', ...(diagnosticsEnabled() ? { 'X-Voice-Diagnostics': '1' } : {}) }, signal: controller.signal,
         body: JSON.stringify({ stream: true, sessionControl: true, messages: [...history.slice(-98), { role: 'user', content: turn.user }] }),
       })
+      recordSpeechDiagnostic('reply.response', { player: player.diagnosticId || 'custom', turn: turn.index,
+        requestId: response.headers.get('X-Voice-Trace') || '', status: response.status })
       if (!current()) { await response.body?.cancel().catch(() => {}); return }
       await readReply(response, async event => {
         if (!current()) return
@@ -159,6 +170,7 @@ export function createConversation(playerFactory: (onProgress: (progress: Speech
           if (speechEnabled === false || turn.speechError) turn.visibleAssistant = turn.assistant
         }
         if (event.type === 'speech_error') {
+          recordSpeechDiagnostic('reply.speech_error', { player: player.diagnosticId || 'custom' })
           turn.speechError = event.error
           player.stop(); turn.visibleAssistant = turn.assistant
         }
@@ -178,6 +190,7 @@ export function createConversation(playerFactory: (onProgress: (progress: Speech
             receivedAudio = true
           } catch (error) {
             if (!current()) return
+            recordSpeechDiagnostic('reply.playback_error', { player: player.diagnosticId || 'custom', errorType: error instanceof Error ? error.name : 'unknown' })
             player.stop()
             turn.speechError = error instanceof Error ? error.message : '语音播放失败'
             turn.visibleAssistant = turn.assistant
@@ -198,6 +211,7 @@ export function createConversation(playerFactory: (onProgress: (progress: Speech
       turn.visibleAssistant = turn.assistant
       turn.error = error instanceof Error ? error.message : '模型请求失败'
     } finally {
+      recordSpeechDiagnostic('reply.end', { trace: turn.diagnosticId || '', player: player.diagnosticId || 'custom', status: turn.status, aborted: controller.signal.aborted })
       if (active === reply) {
         restoreVolume(); player.stop(); active = undefined; state.answering = false
         drain()
@@ -262,12 +276,17 @@ export function createConversation(playerFactory: (onProgress: (progress: Speech
       interrupt()
       clearPause()
       if (!final) silenceAt = undefined
+      if (final) finalAt = performance.now()
+      recordSpeechDiagnostic('asr.accept', { sessionId, index, final })
       pending.set(index, { text, final })
       updatePendingText()
       scheduleCommit()
     },
     speechActivity(speaking: boolean, silenceMs = 240) {
       if (disposed || ended || microphoneSpeaking === speaking) return
+      recordSpeechDiagnostic('vad.activity', { sessionId, speaking, silenceMs })
+      if (speaking) { silenceObserved = undefined; endpointAt = undefined }
+      else silenceObserved = performance.now() - silenceMs
       microphoneSpeaking = speaking
       state.userSpeaking = speaking
       if (speaking) {
@@ -291,6 +310,8 @@ export function createConversation(playerFactory: (onProgress: (progress: Speech
     enableTurnDetection() { turnDetection = true; state.notice = '请先说“你好助手”，再告诉我你的问题。' },
     endpoint(probability?: number) {
       if (disposed || ended || state.userSpeaking) return
+      endpointAt = performance.now()
+      recordSpeechDiagnostic('endpoint.result', { sessionId, probability: probability ?? -1 })
       endpointPending = false
       endpointProbability = typeof probability === 'number' && probability >= 0 && probability <= 1 ? probability : undefined
       state.endpointMode = endpointProbability === undefined ? 'rules' : 'model'

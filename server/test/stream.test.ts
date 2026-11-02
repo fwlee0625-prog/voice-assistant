@@ -107,7 +107,18 @@ test('HTTP stream returns normalized events and disconnect aborts upstream', asy
   t.after(async () => { closeAsr(); server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve())); });
   const url = `http://127.0.0.1:${(server.address() as { port: number }).port}/api/chat/completions`;
   const request = { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ stream: true, messages: [{ role: 'user', content: 'hello' }] }) };
-  assert.deepEqual((await collect(readSse(await fetch(url, request)))).map(s => JSON.parse(s).type), ['speech', 'text', 'done']);
+  const normal = await fetch(url, request);
+  assert.equal(normal.headers.get('X-Voice-Trace'), null);
+  const normalEvents = (await collect(readSse(normal))).map(s => JSON.parse(s));
+  assert.deepEqual(normalEvents.map(event => event.type), ['speech', 'text', 'done']);
+  assert.ok(normalEvents.every(event => event.diagnostic === undefined));
+  const traced = await fetch(url, { ...request, headers: { ...request.headers, 'X-Voice-Diagnostics': '1' } });
+  assert.match(traced.headers.get('X-Voice-Trace')!, /^[a-f0-9-]{36}$/);
+  const tracedEvents = (await collect(readSse(traced))).map(s => JSON.parse(s));
+  assert.deepEqual(tracedEvents.map(event => event.diagnostic.sequence), tracedEvents.map((_, i) => i));
+  assert.deepEqual(tracedEvents.filter(event => event.type === 'timing').map(event => event.stage),
+    ['request.ready', 'model.request', 'model.headers', 'model.first_delta', 'model.end']);
+  assert.ok(tracedEvents.every((event, i) => event.diagnostic.elapsedMs >= (tracedEvents[i - 1]?.diagnostic.elapsedMs ?? 0)));
   disconnect = true;
   const controller = new AbortController();
   const response = await fetch(url, { ...request, signal: controller.signal });
@@ -262,4 +273,26 @@ test('an answer arriving during filler synthesis cancels it without delaying spe
     assert.equal(events.some(event => event.type === 'filler_audio'), false);
     assert.equal(events.some(event => event.type === 'audio' && event.text === '正文。'), true);
   } finally { release(); }
+});
+
+
+test('timing stages cover each TTS phrase and stop on synthesis failure', async () => {
+  const stages: string[] = [];
+  async function* text() { yield '第一句。第二句。'; }
+  await streamSpokenReply(text(), { async *synthesize() {
+    yield { data: 'AAA=', sampleRate: 24000, channels: 1, format: 'pcm16' };
+  } }, '冰糖', signal(), async () => {}, { onStage: async (stage, id) => { stages.push(`${stage}:${id}`); } });
+  assert.deepEqual(stages, ['tts.request:0', 'tts.first_audio:0', 'tts.end:0', 'tts.request:1', 'tts.first_audio:1', 'tts.end:1']);
+  stages.length = 0;
+  await streamSpokenReply(text(), { async *synthesize() { throw new Error('failed'); } }, '冰糖', signal(), async () => {},
+    { onStage: async (stage, id) => { stages.push(`${stage}:${id}`); } });
+  assert.deepEqual(stages, ['tts.request:0']);
+});
+
+test('model timing reports first content once and never marks a truncated stream complete', async t => {
+  t.mock.method(globalThis, 'fetch', async () => sse(chunk('partial'), chunk('two')));
+  const stages: string[] = [];
+  await assert.rejects(collect(streamChat(defaults, 'fake', [{ role: 'user', content: 'hello' }], signal(), undefined,
+    async stage => { stages.push(stage); })), /中断/);
+  assert.deepEqual(stages, ['model.request', 'model.headers', 'model.first_delta']);
 });

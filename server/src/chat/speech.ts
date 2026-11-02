@@ -26,7 +26,7 @@ function wait(ms: number, signal: AbortSignal) {
 export async function streamSpokenReply(
   text: AsyncIterable<string>, provider: TtsProvider | undefined, voice: string,
   signal: AbortSignal, emit: (event: ReplyEvent) => Promise<void>,
-  options: { filler?: boolean; fillers?: string[]; messages?: ChatMessage[]; decideFiller?: FillerDecision } = {},
+  options: { filler?: boolean; fillers?: string[]; messages?: ChatMessage[]; decideFiller?: FillerDecision; onStage?: (stage: string, sentenceId?: number) => Promise<void> } = {},
 ) {
   const splitter = createSentenceSplitter();
   const queue: (SpeechSentence & { style?: string })[] = [];
@@ -87,11 +87,15 @@ export async function streamSpokenReply(
         const sentence = queue.shift();
         if (sentence !== undefined) {
           const id = sentenceId++;
+          await options.onStage?.('tts.request', id);
+          let firstChunk = true;
           for await (const chunk of provider.synthesize({ text: sentence.text, voice, style: sentence.style, signal: speechSignal })) {
             speechSignal.throwIfAborted();
+            if (firstChunk) { firstChunk = false; await options.onStage?.('tts.first_audio', id); }
             await emit({ type: 'audio', ...chunk, text: sentence.text, start: sentence.start, end: sentence.end, sentenceId: id });
           }
           speechSignal.throwIfAborted();
+          await options.onStage?.('tts.end', id);
           await emit({ type: 'sentence_end', sentenceId: id });
         } else if (ended) break;
         else await new Promise<void>(resolve => { wake = resolve; });

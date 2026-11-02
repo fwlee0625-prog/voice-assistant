@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { config as dotenv } from "dotenv";
 
 export const serverRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+export const wakeTokensPath = resolve(serverRoot, '../frontend-test/public/kws/tokens.txt');
 export interface ServerConfig {
   host: string;
   port: number;

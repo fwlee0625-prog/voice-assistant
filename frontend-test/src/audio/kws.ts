@@ -1,5 +1,5 @@
 /** Browser-only keyword spotting; no recognizer API or audio upload is involved. */
-export type WakeKeyword = { text: string; phonemes: string }
+export type WakeKeyword = { text: string; phonemes: string; variants?: string[] }
 export const defaultWakeKeywords: WakeKeyword[] = [
   { text: '你好助手', phonemes: 'n ǐ h ǎo zh ù sh ǒu' },
   { text: '台球助手', phonemes: 't ái q iú zh ù sh ǒu' },
@@ -19,7 +19,7 @@ export async function createKeywordSpotter(onWake: (keyword: string) => void, on
       worker.onerror = () => { clearTimeout(timer); cleanup(); close(); reject(new Error(message)) }
       worker.onmessage = ({ data }) => {
         if (data.type === 'ready') { clearTimeout(timer); cleanup(); resolve() }
-        else if (data.type === 'error') { clearTimeout(timer); cleanup(); close(); reject(new Error(message)) }
+        else if (data.type === 'error') { clearTimeout(timer); cleanup(); close(); reject(new Error(data.message ? `${message}（${data.message}）` : message)) }
       }
     worker.postMessage({ type: 'init', assets: new URL(import.meta.env.BASE_URL + 'kws/', location.origin).href, keywords })
     })

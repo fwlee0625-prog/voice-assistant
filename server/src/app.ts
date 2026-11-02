@@ -9,6 +9,7 @@ import { enhancementRoutes } from "./enhancement/routes.ts";
 import type { EnhanceAudio } from "./enhancement/worker.ts";
 import { errorHandler } from "./http/errors.ts";
 import type { FillerDecision } from './chat/filler-decision.ts';
+import { wakeRoutes } from './wake/routes.ts';
 
 export function createApp(enhance: EnhanceAudio, settings: SettingsStore, credentials: LlmCredentials, origins: Set<string>, ttsCredentials?: LlmCredentials, decideFiller?: FillerDecision) {
   const app = express();
@@ -19,6 +20,7 @@ export function createApp(enhance: EnhanceAudio, settings: SettingsStore, creden
   app.use(enhancementRoutes(enhance));
   app.use(express.json({ limit: '256kb' }));
   app.use(settingsRoutes(settings, credentials, origins, ttsCredentials));
+  app.use(wakeRoutes(settings, credentials, origins));
   app.use(chatRoutes(settings, credentials, ttsCredentials, decideFiller));
   app.use(ttsRoutes(settings, ttsCredentials));
   app.use((_req, res) => {
